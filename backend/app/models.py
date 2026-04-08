@@ -53,6 +53,15 @@ class WikiRevision(db.Model):
     editor_id = db.Column(db.Integer, db.ForeignKey('user.id'))
     page = db.relationship('WikiPage', backref='revisions')
     editor = db.relationship('User')
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'content': self.content,
+            'created_at': self.created_at.isoformat(),
+            'page_id': self.page_id,
+            'editor': self.editor.to_dict() if self.editor else None
+        }
 
 class ChatRoom(db.Model):
     id = db.Column(db.Integer, primary_key=True)

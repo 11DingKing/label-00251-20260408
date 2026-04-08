@@ -5,6 +5,7 @@ from app.models import WikiPage, WikiRevision, User
 import markdown
 import bleach
 import re
+import difflib
 
 bp = Blueprint('wiki', __name__)
 
@@ -43,6 +44,11 @@ def create_page():
     )
     db.session.add(page)
     db.session.commit()
+    
+    revision = WikiRevision(content=page.content, page_id=page.id, editor_id=int(get_jwt_identity()))
+    db.session.add(revision)
+    db.session.commit()
+    
     return jsonify(page.to_dict()), 201
 
 @bp.route('/<slug>', methods=['GET'])
@@ -92,3 +98,56 @@ def search():
         (WikiPage.title.contains(q)) | (WikiPage.content.contains(q))
     ).all() if q else []
     return jsonify([p.to_dict() for p in pages])
+
+@bp.route('/<slug>/revisions', methods=['GET'])
+@jwt_required()
+def get_revisions(slug):
+    page = WikiPage.query.filter_by(slug=slug).first_or_404()
+    revisions = WikiRevision.query.filter_by(page_id=page.id).order_by(WikiRevision.created_at.desc()).all()
+    return jsonify([r.to_dict() for r in revisions])
+
+@bp.route('/<slug>/revisions/<int:revision_id>', methods=['GET'])
+@jwt_required()
+def get_revision(slug, revision_id):
+    page = WikiPage.query.filter_by(slug=slug).first_or_404()
+    revision = WikiRevision.query.filter_by(id=revision_id, page_id=page.id).first_or_404()
+    data = revision.to_dict()
+    data['html'] = render_markdown(revision.content)
+    return jsonify(data)
+
+@bp.route('/<slug>/revisions/<int:revision_id>/diff', methods=['GET'])
+@jwt_required()
+def get_revision_diff(slug, revision_id):
+    page = WikiPage.query.filter_by(slug=slug).first_or_404()
+    revision = WikiRevision.query.filter_by(id=revision_id, page_id=page.id).first_or_404()
+    
+    current_content = page.content
+    revision_content = revision.content
+    
+    diff = list(difflib.unified_diff(
+        revision_content.splitlines(keepends=True),
+        current_content.splitlines(keepends=True),
+        fromfile='历史版本',
+        tofile='当前版本',
+        lineterm=''
+    ))
+    
+    return jsonify({
+        'diff': diff,
+        'current_content': current_content,
+        'revision_content': revision_content
+    })
+
+@bp.route('/<slug>/revisions/<int:revision_id>/rollback', methods=['POST'])
+@jwt_required()
+def rollback_to_revision(slug, revision_id):
+    page = WikiPage.query.filter_by(slug=slug).first_or_404()
+    revision = WikiRevision.query.filter_by(id=revision_id, page_id=page.id).first_or_404()
+    
+    current_revision = WikiRevision(content=page.content, page_id=page.id, editor_id=int(get_jwt_identity()))
+    db.session.add(current_revision)
+    
+    page.content = revision.content
+    db.session.commit()
+    
+    return jsonify(page.to_dict())
