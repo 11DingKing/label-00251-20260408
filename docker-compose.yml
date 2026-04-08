@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  backend:
+    build: ./backend
+    container_name: gamedev-backend
+    ports:
+      - "5001:5001"
+    volumes:
+      - backend-data:/app/instance
+    restart: unless-stopped
+
+  frontend-user:
+    build: ./frontend-user
+    container_name: gamedev-frontend-user
+    ports:
+      - "8081:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  backend-data:
